@@ -74,6 +74,25 @@ async function buildRawMessage(input: ComposeInput): Promise<Buffer> {
 
 // ── IMAP připojení (na operaci) ──────────────────────────────────────────────
 
+/** Přeloží IMAP chybu na srozumitelnou českou hlášku. */
+function imapErrorMessage(err: unknown): string {
+  const e = err as { authenticationFailed?: boolean; responseText?: string; code?: string; message?: string };
+  const where = `${config.IMAP_HOST}:${config.IMAP_PORT}, uživatel ${config.EMAIL_USER}`;
+  if (e?.authenticationFailed || /auth/i.test(e?.responseText || "")) {
+    return `Přihlášení k IMAP selhalo — špatné jméno/heslo, nebo má účet zakázaný IMAP přístup (${where}).`;
+  }
+  if (e?.code === "ETIMEOUT" || /timeout/i.test(e?.message || "")) {
+    return `IMAP spojení vypršelo (timeout). Zkontroluj IMAP_HOST/IMAP_PORT (${config.IMAP_HOST}:${config.IMAP_PORT}) a že server povoluje připojení.`;
+  }
+  if (e?.code === "ENOTFOUND" || e?.code === "EAI_AGAIN") {
+    return `IMAP server nenalezen: "${config.IMAP_HOST}". Zkontroluj IMAP_HOST.`;
+  }
+  if (e?.code === "ECONNREFUSED") {
+    return `IMAP odmítl spojení na ${config.IMAP_HOST}:${config.IMAP_PORT}. Zkontroluj IMAP_PORT.`;
+  }
+  return `Chyba IMAP: ${e?.responseText || e?.message || String(err)}`;
+}
+
 /** Otevře IMAP spojení, spustí callback a spolehlivě se odhlásí. */
 async function withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   const client = new ImapFlow({
@@ -86,11 +105,22 @@ async function withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     // Rychlé selhání při špatném serveru/heslu (jinak by spojení viselo a klient by to utnul).
     connectionTimeout: 15000,
     greetingTimeout: 15000,
-    socketTimeout: 60000,
+    socketTimeout: 30000,
   });
-  await client.connect();
+  // KRITICKÉ: ImapFlow vyvolává 'error' event (např. socket timeout) ASYNCHRONNĚ.
+  // Bez tohoto handleru by neodchycený 'error' shodil celý Node proces (server).
+  client.on("error", (err) => {
+    console.error("[imap] error event:", (err as Error)?.message || err);
+  });
+  try {
+    await client.connect();
+  } catch (err) {
+    throw new Error(imapErrorMessage(err));
+  }
   try {
     return await fn(client);
+  } catch (err) {
+    throw new Error(imapErrorMessage(err));
   } finally {
     await client.logout().catch(() => {
       /* spojení nemusí jít korektně zavřít — to nevadí */
