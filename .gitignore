@@ -1,0 +1,15 @@
+node_modules/
+dist/
+
+# Generovaný bundle (sdílej přes release/přílohu, ne v gitu)
+*.mcpb
+
+# Secrets — never commit credentials
+.env
+.env.local
+.env.*.local
+
+# Logs / OS
+*.log
+.DS_Store
+Thumbs.db

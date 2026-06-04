@@ -1,0 +1,88 @@
+{
+  "manifest_version": "0.3",
+  "name": "email-mcp",
+  "display_name": "E-mail (IMAP/SMTP)",
+  "version": "0.1.0",
+  "description": "Čtení schránky, filtrování a příprava draftů přes IMAP/SMTP. Přednastaveno pro Webglobe.",
+  "long_description": "Lokální MCP server pro práci s e-mailem. Umožní Claudovi číst tvou schránku (IMAP), filtrovat e-maily a připravovat koncepty/odpovědi (drafty), volitelně i odesílat (SMTP). Přihlášení i e-maily zůstávají jen u tebe na počítači. Výchozí nastavení je pro Webglobe; pro jiného poskytovatele stačí přepsat servery ve formuláři.",
+  "author": {
+    "name": "prospoluzaky"
+  },
+  "license": "MIT",
+  "keywords": ["email", "imap", "smtp", "webglobe", "drafts"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "EMAIL_USER": "${user_config.email_user}",
+        "EMAIL_PASSWORD": "${user_config.email_password}",
+        "EMAIL_FROM_NAME": "${user_config.from_name}",
+        "IMAP_HOST": "${user_config.imap_host}",
+        "IMAP_PORT": "${user_config.imap_port}",
+        "SMTP_HOST": "${user_config.smtp_host}",
+        "SMTP_PORT": "${user_config.smtp_port}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "list_folders", "description": "Vypíše složky (mailboxy) na účtu." },
+    { "name": "list_emails", "description": "Vypíše e-maily ze složky podle filtrů." },
+    { "name": "get_email", "description": "Načte celý e-mail podle UID (tělo + přílohy)." },
+    { "name": "create_draft", "description": "Vytvoří nový koncept (draft)." },
+    { "name": "draft_reply", "description": "Připraví draft odpovědi na e-mail." },
+    { "name": "send_email", "description": "Odešle e-mail přes SMTP (nevratné)." }
+  ],
+  "user_config": {
+    "email_user": {
+      "type": "string",
+      "title": "E-mailová adresa",
+      "description": "Celá adresa = zároveň přihlašovací jméno (např. jmeno@firma.cz).",
+      "required": true
+    },
+    "email_password": {
+      "type": "string",
+      "title": "Heslo k e-mailu",
+      "description": "Heslo k e-mailové schránce. Uloží se bezpečně do systémového trezoru (Keychain / Správce přihlašovacích údajů).",
+      "sensitive": true,
+      "required": true
+    },
+    "from_name": {
+      "type": "string",
+      "title": "Jméno odesílatele (volitelné)",
+      "description": "Zobrazí se příjemci místo holé adresy. Necháš-li prázdné, použije se adresa.",
+      "required": false,
+      "default": ""
+    },
+    "imap_host": {
+      "type": "string",
+      "title": "IMAP server (čtení pošty)",
+      "description": "Webglobe: mail.webglobe.cz · Seznam: imap.seznam.cz · Gmail: imap.gmail.com",
+      "required": false,
+      "default": "mail.webglobe.cz"
+    },
+    "imap_port": {
+      "type": "number",
+      "title": "IMAP port",
+      "description": "Obvykle 993 (SSL).",
+      "required": false,
+      "default": 993
+    },
+    "smtp_host": {
+      "type": "string",
+      "title": "SMTP server (odesílání pošty)",
+      "description": "Webglobe: mail.webglobe.cz · Seznam: smtp.seznam.cz · Gmail: smtp.gmail.com",
+      "required": false,
+      "default": "mail.webglobe.cz"
+    },
+    "smtp_port": {
+      "type": "number",
+      "title": "SMTP port",
+      "description": "465 (SSL). Pozn.: pro port 587 (STARTTLS) je potřeba i SMTP_SECURE=false.",
+      "required": false,
+      "default": 465
+    }
+  }
+}

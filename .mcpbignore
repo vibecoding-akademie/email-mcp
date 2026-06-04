@@ -1,0 +1,26 @@
+# Co se NEMÁ dostat do .mcpb balíčku.
+
+# Zdrojáky a build artefakty (do balíčku jde jen zkompilované dist/)
+src
+tsconfig.json
+*.map
+**/*.map
+
+# Tajné údaje – NIKDY nebalit (ochrana, i kdyby vznikly)
+.env
+.env.*
+.env.local
+.env.example
+
+# Git / dev nástroje
+.git
+.gitignore
+.claude
+CLAUDE.md
+
+# Hotové balíčky
+*.mcpb
+
+# OS smetí
+.DS_Store
+Thumbs.db
