@@ -76,11 +76,20 @@ app.post("/mcp", auth.requireOwner, async (req, res) => {
       };
       const server = createMcpServer();
       await server.connect(transport);
+    } else if (sessionId && !transport) {
+      // Neznámá/expirovaná session — typicky po restartu/redeployi serveru
+      // (sessions držíme v paměti). Dle MCP spec vrátíme 404, což je pro klienta
+      // signál „pošli nový initialize"; claude.ai se tím sám zotaví.
+      return res.status(404).json({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Session nenalezena nebo vypršela. Pošli prosím initialize." },
+        id: req.body?.id ?? null,
+      });
     } else if (!transport) {
       return res.status(400).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Chybí platné Mcp-Session-Id (nejdřív pošli initialize)." },
-        id: null,
+        id: req.body?.id ?? null,
       });
     }
 
@@ -102,9 +111,13 @@ async function handleSession(req: express.Request, res: express.Response) {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   const transport = sessionId ? transports[sessionId] : undefined;
   if (!transport) {
-    return res.status(400).json({
+    // Neznámá session → 404 (klient se re-inicializuje), chybějící → 400.
+    return res.status(sessionId ? 404 : 400).json({
       jsonrpc: "2.0",
-      error: { code: -32000, message: "Neznámé nebo chybějící Mcp-Session-Id." },
+      error: {
+        code: sessionId ? -32001 : -32000,
+        message: sessionId ? "Session nenalezena nebo vypršela." : "Chybí Mcp-Session-Id.",
+      },
       id: null,
     });
   }
