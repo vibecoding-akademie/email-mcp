@@ -83,6 +83,10 @@ async function withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     auth: { user: config.EMAIL_USER, pass: config.EMAIL_PASSWORD },
     logger: false,
     tls: { rejectUnauthorized: config.TLS_REJECT_UNAUTHORIZED },
+    // Rychlé selhání při špatném serveru/heslu (jinak by spojení viselo a klient by to utnul).
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 60000,
   });
   await client.connect();
   try {

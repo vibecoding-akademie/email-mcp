@@ -189,13 +189,15 @@ export function createAuth(cfg: AuthConfig) {
   async function requireOwner(req: Request, res: Response, next: () => void) {
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) {
+      console.error("[auth] 401 — chybí Bearer token");
       res.setHeader("WWW-Authenticate", challenge);
       return res.status(401).json({ error: "unauthorized", error_description: "Chybí přístupový token." });
     }
     try {
       await verify(header.slice(7), "access");
       next();
-    } catch {
+    } catch (e) {
+      console.error("[auth] 401 — neplatný/expirovaný token:", e instanceof Error ? e.message : e);
       res.setHeader("WWW-Authenticate", `${challenge}, error="invalid_token"`);
       res.status(401).json({ error: "invalid_token", error_description: "Token je neplatný nebo vypršel." });
     }

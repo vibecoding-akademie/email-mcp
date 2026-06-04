@@ -63,6 +63,11 @@ app.post("/mcp", auth.requireOwner, async (req, res) => {
   try {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport = sessionId ? transports[sessionId] : undefined;
+    res.on("finish", () =>
+      console.error(
+        `[mcp] ${req.body?.method ?? "?"} session=${sessionId ? "ano" : "ne"} init=${isInitializeRequest(req.body)} -> ${res.statusCode}`,
+      ),
+    );
 
     if (!transport && isInitializeRequest(req.body)) {
       transport = new StreamableHTTPServerTransport({

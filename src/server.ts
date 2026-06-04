@@ -14,6 +14,7 @@ async function run(fn: () => Promise<CallToolResult>): Promise<CallToolResult> {
     return await fn();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error("[tool error]", message); // do Railway logů (stderr)
     return { content: [{ type: "text", text: `Chyba: ${message}` }], isError: true };
   }
 }
