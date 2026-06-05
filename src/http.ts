@@ -8,6 +8,7 @@ import { createEmailService } from "./email-service.js";
 import { createAuth } from "./auth.js";
 import { createStore } from "./store.js";
 import { makeCrypto } from "./crypto.js";
+import { guideHtml } from "./guide.js";
 import { config } from "./config.js";
 
 // ── Povinná konfigurace pro online režim ──────────────────────────────────────
@@ -51,6 +52,11 @@ app.use(auth.router);
 
 app.get("/", (_req, res) => {
   res.json({ name: "email-mcp", status: "ok", transport: "streamable-http", store: store.kind });
+});
+
+// Návod (sdílitelná stránka) — adresu serveru doplní za __PUBLIC_URL__.
+app.get("/navod", (_req, res) => {
+  res.type("html").send(guideHtml.replaceAll("__PUBLIC_URL__", online.publicUrl));
 });
 
 // ── MCP endpoint (session-based) — chráněno OAuth tokenem ──────────────────────
