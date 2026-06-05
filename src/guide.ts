@@ -116,7 +116,7 @@ export const guideHtml = `<!doctype html>
     var de = dots.children;
     for (var k = 0; k < de.length; k++){ de[k].classList.toggle('on', k <= i); }
     counter.textContent = 'Krok ' + (i + 1) + ' / ' + steps.length;
-    back.disabled = i === 0;
+    back.style.visibility = (i === 0) ? 'hidden' : 'visible';
     next.textContent = (i === steps.length - 1) ? 'Hotovo ✓' : 'Další →';
   }
   function confetti(){
