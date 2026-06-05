@@ -107,7 +107,7 @@ npm run dev:http
 | `list_folders` | Vypíše složky (INBOX, Odeslané, Koncepty, Koš…). |
 | `list_emails` | Vypíše e-maily ze složky s filtry: odesílatel, předmět, datum (i relativně `7d`/`2h`), jen nepřečtené, fulltext, stránkování. |
 | `get_email` | Načte celý e-mail podle UID (tělo text/HTML + seznam příloh). Ve výchozím stavu neoznačí jako přečtený. |
-| `read_attachment` | Přečte **obsah** přílohy: PDF a text vrátí jako text, obrázky jako obrázek. |
+| `read_attachment` | Přečte **obsah** přílohy: textové PDF a text → text, **naskenované PDF → obrázky stránek**, obrázkové přílohy → obrázek. |
 | `create_draft` | Vytvoří nový koncept a uloží do složky Koncepty. |
 | `draft_reply` | Připraví **draft odpovědi** na e-mail (správné vlákno, `Re:`, citace originálu). |
 | `send_email` | Odešle e-mail přes SMTP (nevratné) + uloží kopii do Odeslané. |

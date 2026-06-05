@@ -74,7 +74,7 @@
 
 ## Nástroje (MCP tools)
 `list_folders`, `list_emails` (filtry: folder/from/to/subject/search/since/before/unreadOnly + stránkování),
-`get_email` (UID → tělo + seznam příloh), `read_attachment` (obsah přílohy: PDF/text → text, obrázek → image; PDF text přes `unpdf`, scan bez OCR), `create_draft`, `draft_reply` (vlákno + citace), `send_email` (bonus, nevratné).
+`get_email` (UID → tělo + seznam příloh), `read_attachment` (obsah přílohy: textové PDF/text → text přes `unpdf`; naskenované PDF → obrázky stránek přes `renderPageAsImage`+`@napi-rs/canvas`, max 5 str.; obrázek → image), `create_draft`, `draft_reply` (vlákno + citace), `send_email` (bonus, nevratné).
 
 ## Nuance projektu
 - Webglobe (ověřeno z oficiální poradny): IMAP `mail.webglobe.cz:993` (SSL), SMTP `mail.webglobe.cz:465` (SSL) / 587 (STARTTLS). Login = celá e-mailová adresa. Alternativa Office Mail/IceWarp: `webglobe1.onice.io`.

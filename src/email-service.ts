@@ -1,7 +1,7 @@
 import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
-import { extractText, getDocumentProxy } from "unpdf";
+import { extractText, getDocumentProxy, renderPageAsImage } from "unpdf";
 import {
   formatAddresses,
   parseDateInput,
@@ -133,7 +133,8 @@ export interface AttachmentContent {
   contentType: string;
   sizeBytes?: number;
   text?: string;
-  imageBase64?: string;
+  imageBase64?: string; // jedna příloha-obrázek
+  images?: string[]; // stránky PDF vykreslené na obrázky (base64 PNG)
   note?: string;
 }
 
@@ -156,11 +157,27 @@ export interface EmailService {
 /** Přenos, který zprávu jen sestaví do RFC822 bufferu (pro APPEND do složek). */
 const composer = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "crlf" });
 
-/** Vytáhne text z PDF (textová PDF; naskenovaná vrátí prázdno → bez OCR). */
+/** Vytáhne text z PDF (textová PDF; naskenovaná vrátí prázdno). */
 async function extractPdfText(buf: Buffer): Promise<string> {
   const pdf = await getDocumentProxy(new Uint8Array(buf));
   const { text } = await extractText(pdf, { mergePages: true });
   return (typeof text === "string" ? text : (text as string[]).join("\n")).trim();
+}
+
+/** Vykreslí prvních N stránek PDF na PNG (base64) — pro naskenovaná PDF, ať je Claude „vidí". */
+async function renderPdfPagesAsImages(buf: Buffer, maxPages: number): Promise<string[]> {
+  const data = new Uint8Array(buf);
+  const pdf = await getDocumentProxy(data);
+  const pages = Math.min(pdf.numPages, maxPages);
+  const out: string[] = [];
+  for (let p = 1; p <= pages; p++) {
+    const png = await renderPageAsImage(new Uint8Array(buf), p, {
+      canvasImport: () => import("@napi-rs/canvas"),
+      scale: 2,
+    });
+    out.push(Buffer.from(png).toString("base64"));
+  }
+  return out;
 }
 
 /** Bezpečně převede datum (Date i string) na ISO řetězec. */
@@ -302,7 +319,16 @@ export function createEmailService(creds: MailboxCreds): EmailService {
 
         if (ct === "application/pdf") {
           const text = await extractPdfText(buf).catch(() => "");
-          return { ...base, text: text || "(PDF neobsahuje čitelný text — je nejspíš naskenovaný/obrázkový, šlo by jen přes OCR.)" };
+          // Dost textu → vrať text (levné, přesné).
+          if (text.replace(/\s+/g, "").length >= 20) {
+            return { ...base, text };
+          }
+          // Málo/žádný text → naskenované PDF → vykresli stránky na obrázky, ať je Claude vidí.
+          const images = await renderPdfPagesAsImages(buf, 5).catch(() => [] as string[]);
+          if (images.length > 0) {
+            return { ...base, images, note: "Naskenované PDF — předáno jako obrázky stránek (max 5)." };
+          }
+          return { ...base, text: text || "(PDF se nepodařilo přečíst.)" };
         }
         if (ct.startsWith("image/")) {
           if ((att.size ?? buf.length) > 8_000_000) {

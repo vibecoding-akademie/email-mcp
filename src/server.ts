@@ -112,6 +112,13 @@ export function createMcpServer(email: EmailService): McpServer {
     (args) =>
       run(async () => {
         const a = await email.readAttachment(args.folder || "INBOX", args.uid, args.filename);
+        if (a.images && a.images.length > 0) {
+          const content: CallToolResult["content"] = [
+            { type: "text", text: `Příloha „${a.filename}" (${a.contentType}) — ${a.images.length} str. vykreslených jako obrázek:` },
+          ];
+          for (const img of a.images) content.push({ type: "image", data: img, mimeType: "image/png" });
+          return { content };
+        }
         if (a.imageBase64) {
           return {
             content: [
