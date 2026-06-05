@@ -84,14 +84,19 @@ export function createMcpServer(email: EmailService): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     (args) =>
-      run(async () =>
-        json(
-          await email.getEmail(args.folder || "INBOX", args.uid, {
-            format: args.format,
-            markSeen: args.markSeen,
-          }),
-        ),
-      ),
+      run(async () => {
+        const detail = await email.getEmail(args.folder || "INBOX", args.uid, {
+          format: args.format,
+          markSeen: args.markSeen,
+        });
+        const out: Record<string, unknown> = { ...detail };
+        if (detail.attachments.length > 0) {
+          out.attachmentsHint =
+            "Obsah těchto příloh přečteš nástrojem read_attachment (parametry uid a filename). " +
+            "Uživatel nemusí soubor nahrávat do chatu — server ho stáhne z e-mailu.";
+        }
+        return json(out);
+      }),
   );
 
   // ── read_attachment ──────────────────────────────────────────────────────────
@@ -100,8 +105,10 @@ export function createMcpServer(email: EmailService): McpServer {
     {
       title: "Přečíst přílohu",
       description:
-        "Načte OBSAH přílohy e-mailu (ne jen název). PDF a textové přílohy vrátí jako text, " +
-        "obrázky (foto/sken) jako obrázek, který si můžeš prohlédnout. Názvy příloh získáš z get_email.",
+        "Stáhne přílohu PŘÍMO z e-mailu na serveru a vrátí Claudovi její OBSAH — uživatel " +
+        "NEMUSÍ nic nahrávat do chatu. Použij tenhle nástroj vždy, když se má pracovat s přílohou " +
+        "(faktura, smlouva, PDF…). PDF a textové přílohy vrátí jako text, naskenované PDF a obrázky " +
+        "jako obrázek k prohlédnutí. Názvy příloh zjistíš z get_email.",
       inputSchema: {
         uid: z.number().int().describe("UID e-mailu (z list_emails / get_email)."),
         folder: z.string().optional().describe("Složka, výchozí 'INBOX'."),
