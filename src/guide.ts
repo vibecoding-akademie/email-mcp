@@ -37,8 +37,8 @@ export const guideHtml = `<!doctype html>
 
   <div class="note warn"><b>Co budeš potřebovat:</b> účet <b>Claude Pro nebo Max</b> (vlastní konektory jsou jen na placených tarifech) a přihlašovací údaje ke své e-mailové schránce.</div>
 
-  <h2><span class="n">A</span> Připojit svou schránku</h2>
-  <p class="sub">Nejrychlejší cesta — když už server běží (tahle adresa).</p>
+  <h2><span class="n">🔌</span> Připojit svou schránku</h2>
+  <p class="sub">Zabere to minutku.</p>
   <div class="card">
     <ol>
       <li>V <b>claude.ai</b> otevři <b>Settings → Connectors → Add custom connector</b>.</li>
@@ -63,28 +63,6 @@ export const guideHtml = `<!doctype html>
     <div class="note warn"><b>Heslo „pro aplikace":</b> Seznam i Gmail nepustí dovnitř hlavní heslo, když máš zapnuté dvoufázové ověření — vygeneruj si <b>app-specific heslo</b> a zadej to.
       <br><span class="pill">Seznam: ucet.seznam.cz → Zabezpečení → Heslo pro aplikace</span>
       <span class="pill">Gmail: myaccount.google.com/apppasswords</span></div>
-  </div>
-
-  <h2><span class="n">B</span> Nasadit vlastní server</h2>
-  <p class="sub">Když chceš mít server svůj (zdroj: <a href="https://github.com/Royal-Fox/email-mcp">GitHub</a>). Node nemusíš nic instalovat — staví ho Railway.</p>
-  <div class="card">
-    <ol>
-      <li>Forkni / nahraj repozitář na svůj <b>GitHub</b>.</li>
-      <li>Na <a href="https://railway.app">railway.app</a> → <b>New Project → Deploy from GitHub repo</b> → vyber repo. Railway vše zbuilduje sám.</li>
-      <li><b>+ New → Database → Add PostgreSQL</b> (sem se šifrovaně ukládají údaje schránek).</li>
-      <li>U služby v <b>Variables</b> nastav:
-        <table>
-          <tr><th>Proměnná</th><th>Hodnota</th></tr>
-          <tr><td>DATABASE_URL</td><td><code>\${{Postgres.DATABASE_URL}}</code></td></tr>
-          <tr><td>JWT_SECRET</td><td>náhodný klíč (32+ znaků)</td></tr>
-          <tr><td>ENCRYPTION_KEY</td><td>jiný náhodný klíč</td></tr>
-        </table>
-        <span class="sub">Klíče vygeneruješ např.: <code>node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code></span>
-      </li>
-      <li><b>Settings → Networking → Generate Domain</b> — dostaneš veřejnou adresu <code>https://…up.railway.app</code>.</li>
-      <li>Hotovo. Adresu serveru + <code>/mcp</code> rozdej lidem podle části <b>A</b>.</li>
-    </ol>
-    <div class="note ok">Ověření: otevři kořen serveru (<code>/</code>) — uvidíš <code>{"status":"ok","store":"postgres"}</code>. <code>postgres</code> znamená, že databáze je propojená.</div>
   </div>
 
   <h2><span class="n">🔒</span> Bezpečnost</h2>
