@@ -20,6 +20,8 @@ export const guideHtml = `<!doctype html>
   #counter{color:var(--muted);font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;margin-bottom:.5rem}
   .step{display:none}
   .step.active{display:block;animation:fade .22s ease}
+  #done{display:none;text-align:center;padding:1rem 0;animation:fade .3s ease}
+  #done h2{font-size:1.7rem}#done p{color:var(--muted)}
   @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
   h2{font-size:1.18rem;margin:.1rem 0 .8rem}
   ol{margin:.2rem 0;padding-left:1.2rem}ol li{margin:.5rem 0}
@@ -51,8 +53,7 @@ export const guideHtml = `<!doctype html>
     <section class="step">
       <h2>1 · Otevři konektory v Claude</h2>
       <ol>
-        <li>Jdi na <a href="https://claude.ai" target="_blank">claude.ai</a> a vlevo dole klikni na svůj <b>profil → Settings</b>.</li>
-        <li>V levém menu vyber <b>Connectors</b>.</li>
+        <li>Otevři <a href="https://claude.ai/customize/connectors" target="_blank"><b>claude.ai/customize/connectors</b></a> (přihlaš se do svého účtu).</li>
       </ol>
       <div class="note warn">Vyžaduje <b>Claude Pro nebo Max</b>.</div>
     </section>
@@ -92,6 +93,11 @@ export const guideHtml = `<!doctype html>
       </ol>
     </section>
 
+    <section id="done">
+      <h2>🎉 Paráda!</h2>
+      <p>Schránka je připojená. Zkus se Clauda zeptat na poštu.</p>
+    </section>
+
     <div class="nav">
       <button id="back">← Zpět</button>
       <button id="next">Další →</button>
@@ -113,8 +119,42 @@ export const guideHtml = `<!doctype html>
     back.disabled = i === 0;
     next.textContent = (i === steps.length - 1) ? 'Hotovo ✓' : 'Další →';
   }
+  function confetti(){
+    var cv = document.createElement('canvas');
+    cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:60';
+    document.body.appendChild(cv);
+    var ctx = cv.getContext('2d');
+    function size(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
+    size(); window.addEventListener('resize', size);
+    var colors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#e0e7ff'];
+    var P = [];
+    for (var n = 0; n < 150; n++){
+      P.push({ x: Math.random()*cv.width, y: -20 - Math.random()*cv.height*0.4, r: 5 + Math.random()*7,
+        c: colors[(Math.random()*colors.length)|0], vy: 2 + Math.random()*4, vx: -2.5 + Math.random()*5,
+        a: Math.random()*6.28, va: -0.2 + Math.random()*0.4 });
+    }
+    var start = Date.now();
+    function frame(){
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      for (var k = 0; k < P.length; k++){
+        var p = P[k]; p.x += p.vx; p.y += p.vy; p.a += p.va;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a);
+        ctx.fillStyle = p.c; ctx.fillRect(-p.r/2, -p.r/2, p.r, p.r*0.6); ctx.restore();
+      }
+      if (Date.now() - start < 4500){ requestAnimationFrame(frame); } else { cv.remove(); }
+    }
+    frame();
+  }
+  function celebrate(){
+    for (var k = 0; k < steps.length; k++){ steps[k].classList.remove('active'); }
+    for (var k = 0; k < dots.children.length; k++){ dots.children[k].classList.add('on'); }
+    document.getElementById('done').style.display = 'block';
+    document.querySelector('.nav').style.display = 'none';
+    counter.style.display = 'none';
+    confetti();
+  }
   back.onclick = function(){ if (i > 0){ i--; render(); } };
-  next.onclick = function(){ if (i < steps.length - 1){ i++; render(); } };
+  next.onclick = function(){ if (i < steps.length - 1){ i++; render(); } else { celebrate(); } };
   render();
 })();
 </script>
