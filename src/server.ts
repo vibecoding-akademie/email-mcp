@@ -94,6 +94,39 @@ export function createMcpServer(email: EmailService): McpServer {
       ),
   );
 
+  // ── read_attachment ──────────────────────────────────────────────────────────
+  server.registerTool(
+    "read_attachment",
+    {
+      title: "Přečíst přílohu",
+      description:
+        "Načte OBSAH přílohy e-mailu (ne jen název). PDF a textové přílohy vrátí jako text, " +
+        "obrázky (foto/sken) jako obrázek, který si můžeš prohlédnout. Názvy příloh získáš z get_email.",
+      inputSchema: {
+        uid: z.number().int().describe("UID e-mailu (z list_emails / get_email)."),
+        folder: z.string().optional().describe("Složka, výchozí 'INBOX'."),
+        filename: z.string().optional().describe("Název přílohy (z get_email). Nezadáno = první příloha."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    (args) =>
+      run(async () => {
+        const a = await email.readAttachment(args.folder || "INBOX", args.uid, args.filename);
+        if (a.imageBase64) {
+          return {
+            content: [
+              { type: "text", text: `Příloha „${a.filename}" (${a.contentType}):` },
+              { type: "image", data: a.imageBase64, mimeType: a.contentType },
+            ],
+          };
+        }
+        if (a.text !== undefined) {
+          return { content: [{ type: "text", text: `Obsah přílohy „${a.filename}" (${a.contentType}):\n\n${a.text}` }] };
+        }
+        return { content: [{ type: "text", text: a.note || "Přílohu nelze přečíst." }] };
+      }),
+  );
+
   // ── create_draft ─────────────────────────────────────────────────────────────
   server.registerTool(
     "create_draft",

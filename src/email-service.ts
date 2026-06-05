@@ -1,6 +1,7 @@
 import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
+import { extractText, getDocumentProxy } from "unpdf";
 import {
   formatAddresses,
   parseDateInput,
@@ -126,8 +127,19 @@ export interface SendResult {
   savedToSent: boolean;
 }
 
+/** Obsah přílohy předaný Claudovi — text (PDF/text) nebo obrázek (base64). */
+export interface AttachmentContent {
+  filename: string;
+  contentType: string;
+  sizeBytes?: number;
+  text?: string;
+  imageBase64?: string;
+  note?: string;
+}
+
 export interface EmailService {
   listFolders(): Promise<FolderInfo[]>;
+  readAttachment(folder: string, uid: number, filename?: string): Promise<AttachmentContent>;
   listEmails(filter: ListEmailsFilter): Promise<ListEmailsResult>;
   getEmail(
     folder: string,
@@ -143,6 +155,13 @@ export interface EmailService {
 
 /** Přenos, který zprávu jen sestaví do RFC822 bufferu (pro APPEND do složek). */
 const composer = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "crlf" });
+
+/** Vytáhne text z PDF (textová PDF; naskenovaná vrátí prázdno → bez OCR). */
+async function extractPdfText(buf: Buffer): Promise<string> {
+  const pdf = await getDocumentProxy(new Uint8Array(buf));
+  const { text } = await extractText(pdf, { mergePages: true });
+  return (typeof text === "string" ? text : (text as string[]).join("\n")).trim();
+}
 
 /** Bezpečně převede datum (Date i string) na ISO řetězec. */
 function toIso(d: Date | string | null | undefined): string | null {
@@ -261,6 +280,40 @@ export function createEmailService(creds: MailboxCreds): EmailService {
           specialUse: f.specialUse,
           subscribed: f.subscribed,
         }));
+      });
+    },
+
+    async readAttachment(folder, uid, filename) {
+      return withClient(async (client) => {
+        await client.mailboxOpen(folder, { readOnly: true });
+        const msg = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
+        if (!msg || !msg.source) throw new Error(`E-mail s UID ${uid} ve složce "${folder}" nenalezen.`);
+        const parsed = await simpleParser(msg.source);
+        const atts = parsed.attachments ?? [];
+        if (atts.length === 0) throw new Error("E-mail nemá žádné přílohy.");
+        const att = filename ? atts.find((a) => a.filename === filename) : atts[0];
+        if (!att) {
+          const names = atts.map((a) => a.filename || "(bez názvu)").join(", ");
+          throw new Error(`Příloha "${filename}" nenalezena. Dostupné přílohy: ${names}`);
+        }
+        const ct = (att.contentType || "application/octet-stream").toLowerCase();
+        const buf = att.content as Buffer;
+        const base = { filename: att.filename || "(bez názvu)", contentType: ct, sizeBytes: att.size };
+
+        if (ct === "application/pdf") {
+          const text = await extractPdfText(buf).catch(() => "");
+          return { ...base, text: text || "(PDF neobsahuje čitelný text — je nejspíš naskenovaný/obrázkový, šlo by jen přes OCR.)" };
+        }
+        if (ct.startsWith("image/")) {
+          if ((att.size ?? buf.length) > 8_000_000) {
+            return { ...base, note: "Obrázek je příliš velký (>8 MB) na předání do chatu." };
+          }
+          return { ...base, imageBase64: buf.toString("base64") };
+        }
+        if (ct.startsWith("text/") || ct === "application/json" || ct === "application/xml") {
+          return { ...base, text: buf.toString("utf8").slice(0, 100_000) };
+        }
+        return { ...base, note: `Přílohu typu "${ct}" neumím přečíst jako text. Otevři ji ve webmailu.` };
       });
     },
 
