@@ -4,10 +4,13 @@ import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpServer } from "./server.js";
+import { createEmailService } from "./email-service.js";
 import { createAuth } from "./auth.js";
+import { createStore } from "./store.js";
+import { makeCrypto } from "./crypto.js";
 import { config } from "./config.js";
 
-// ── Odvození a kontrola povinné konfigurace pro online režim ──────────────────
+// ── Povinná konfigurace pro online režim ──────────────────────────────────────
 function publicUrl(): string {
   const raw =
     config.PUBLIC_URL ||
@@ -15,24 +18,23 @@ function publicUrl(): string {
   return raw.replace(/\/+$/, "");
 }
 
-function requireOnlineConfig(): { publicUrl: string; ownerPassword: string; jwtSecret: string } {
+function requireOnlineConfig() {
   const missing: string[] = [];
   const url = publicUrl();
   if (!url) missing.push("PUBLIC_URL (nebo RAILWAY_PUBLIC_DOMAIN)");
-  if (!config.OWNER_PASSWORD) missing.push("OWNER_PASSWORD");
   if (!config.JWT_SECRET) missing.push("JWT_SECRET");
+  if (!config.ENCRYPTION_KEY) missing.push("ENCRYPTION_KEY");
   if (missing.length > 0) {
-    console.error(
-      "❌ Online (HTTP) režim vyžaduje tyto proměnné prostředí:\n" +
-        missing.map((m) => `  • ${m}`).join("\n"),
-    );
+    console.error("❌ Online režim vyžaduje:\n" + missing.map((m) => `  • ${m}`).join("\n"));
     process.exit(1);
   }
-  return { publicUrl: url, ownerPassword: config.OWNER_PASSWORD!, jwtSecret: config.JWT_SECRET! };
+  return { publicUrl: url, jwtSecret: config.JWT_SECRET!, encryptionKey: config.ENCRYPTION_KEY! };
 }
 
 const online = requireOnlineConfig();
-const auth = createAuth(online);
+const crypto = makeCrypto(online.encryptionKey);
+const store = createStore({ databaseUrl: config.DATABASE_URL, crypto });
+const auth = createAuth({ publicUrl: online.publicUrl, jwtSecret: online.jwtSecret, store });
 
 const app = express();
 app.use(
@@ -45,31 +47,36 @@ app.use(
 );
 app.use(express.json({ limit: "4mb" }));
 app.use(express.urlencoded({ extended: false }));
-
-// OAuth endpointy (discovery, register, authorize, token)
 app.use(auth.router);
 
-// Health-check (veřejný, bez přihlášení) — pro Railway a rychlou kontrolu
 app.get("/", (_req, res) => {
-  res.json({ name: "email-mcp", status: "ok", transport: "streamable-http" });
+  res.json({ name: "email-mcp", status: "ok", transport: "streamable-http", store: store.kind });
 });
 
-// ── MCP endpoint (Streamable HTTP, session-based) — chráněný OAuth tokenem ─────
-// Sessions drží v paměti. Jsou krátké; po restartu se klient znovu inicializuje
-// (OAuth token je stateless, takže přihlášení zůstává v platnosti).
+// ── MCP endpoint (session-based) — chráněno OAuth tokenem ──────────────────────
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
-app.post("/mcp", auth.requireOwner, async (req, res) => {
+app.post("/mcp", auth.requireAuth, async (req, res) => {
   try {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport = sessionId ? transports[sessionId] : undefined;
+    const reqId = (req.body as { id?: string | number | null } | undefined)?.id ?? null;
     res.on("finish", () =>
-      console.error(
-        `[mcp] ${req.body?.method ?? "?"} session=${sessionId ? "ano" : "ne"} init=${isInitializeRequest(req.body)} -> ${res.statusCode}`,
-      ),
+      console.error(`[mcp] ${req.body?.method ?? "?"} session=${sessionId ? "ano" : "ne"} -> ${res.statusCode}`),
     );
 
     if (!transport && isInitializeRequest(req.body)) {
+      // Načti údaje schránky tohoto uživatele (z tokenu -> DB) a sváž je se session.
+      const credentialId = res.locals.credentialId as string;
+      const creds = await store.get(credentialId);
+      if (!creds) {
+        return res.status(401).json({
+          jsonrpc: "2.0",
+          error: { code: -32001, message: "Údaje schránky nenalezeny — přidej connector znovu." },
+          id: reqId,
+        });
+      }
+      const service = createEmailService(creds);
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
@@ -79,22 +86,20 @@ app.post("/mcp", auth.requireOwner, async (req, res) => {
       transport.onclose = () => {
         if (transport!.sessionId) delete transports[transport!.sessionId];
       };
-      const server = createMcpServer();
+      const server = createMcpServer(service);
       await server.connect(transport);
     } else if (sessionId && !transport) {
-      // Neznámá/expirovaná session — typicky po restartu/redeployi serveru
-      // (sessions držíme v paměti). Dle MCP spec vrátíme 404, což je pro klienta
-      // signál „pošli nový initialize"; claude.ai se tím sám zotaví.
+      // Neznámá/expirovaná session → 404 = signál pro klienta poslat nový initialize.
       return res.status(404).json({
         jsonrpc: "2.0",
         error: { code: -32001, message: "Session nenalezena nebo vypršela. Pošli prosím initialize." },
-        id: req.body?.id ?? null,
+        id: reqId,
       });
     } else if (!transport) {
       return res.status(400).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Chybí platné Mcp-Session-Id (nejdřív pošli initialize)." },
-        id: req.body?.id ?? null,
+        id: reqId,
       });
     }
 
@@ -102,37 +107,39 @@ app.post("/mcp", auth.requireOwner, async (req, res) => {
   } catch (err) {
     console.error("Chyba při zpracování MCP požadavku:", err);
     if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Interní chyba serveru" },
-        id: null,
-      });
+      res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Interní chyba serveru" }, id: null });
     }
   }
 });
 
-// GET = SSE stream serveru, DELETE = ukončení session.
 async function handleSession(req: express.Request, res: express.Response) {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   const transport = sessionId ? transports[sessionId] : undefined;
   if (!transport) {
-    // Neznámá session → 404 (klient se re-inicializuje), chybějící → 400.
     return res.status(sessionId ? 404 : 400).json({
       jsonrpc: "2.0",
-      error: {
-        code: sessionId ? -32001 : -32000,
-        message: sessionId ? "Session nenalezena nebo vypršela." : "Chybí Mcp-Session-Id.",
-      },
+      error: { code: sessionId ? -32001 : -32000, message: sessionId ? "Session nenalezena nebo vypršela." : "Chybí Mcp-Session-Id." },
       id: null,
     });
   }
   await transport.handleRequest(req, res);
 }
-app.get("/mcp", auth.requireOwner, handleSession);
-app.delete("/mcp", auth.requireOwner, handleSession);
+app.get("/mcp", auth.requireAuth, handleSession);
+app.delete("/mcp", auth.requireAuth, handleSession);
 
-app.listen(config.PORT, () => {
-  console.log(`email-mcp (online) běží na portu ${config.PORT}`);
-  console.log(`Veřejná adresa: ${online.publicUrl}`);
-  console.log(`Connector URL do claude.ai: ${online.publicUrl}/mcp`);
+async function main() {
+  await store.init();
+  app.listen(config.PORT, () => {
+    console.log(`email-mcp (online) běží na portu ${config.PORT} | úložiště: ${store.kind}`);
+    console.log(`Veřejná adresa: ${online.publicUrl}`);
+    console.log(`Connector URL do claude.ai: ${online.publicUrl}/mcp`);
+    if (store.kind === "memory") {
+      console.error("⚠️  DATABASE_URL není nastaveno → údaje schránek běží jen v paměti (po restartu zmizí). Přidej Postgres.");
+    }
+  });
+}
+
+main().catch((err) => {
+  console.error("Fatální chyba při startu:", err);
+  process.exit(1);
 });

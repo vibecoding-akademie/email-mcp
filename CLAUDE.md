@@ -16,8 +16,8 @@
 - Jazyk: TypeScript (ESM, NodeNext), Node.js ≥ 20 (vyvíjeno na 22).
 - MCP: `@modelcontextprotocol/sdk` — dvě varianty transportu: **stdio** (lokálně) a **Streamable HTTP** (online).
 - IMAP: `imapflow` · SMTP/MIME: `nodemailer` · parsování: `mailparser` · validace vstupů: `zod` v4.
-- Online vrstva: `express` + `cors` (HTTP) · `jose` (JWT pro OAuth). Hosting Railway.
-- Bez databáze. DB (PostgreSQL) je plánovaná až později (silnější fulltext/analýzy).
+- Online vrstva: `express` + `cors` (HTTP) · `jose` (JWT pro OAuth) · `pg` (Postgres). Hosting Railway.
+- Online je MULTI-TENANT: údaje schránek per-uživatel, šifrované (AES-256-GCM) v Postgresu.
 
 ## Spouštění
 - Dev (stdio): `npm run dev` (tsx watch ze `src/`)
@@ -61,12 +61,14 @@
 ├── .env.example          # šablona přihlášení + Webglobe servery + online proměnné
 ├── README.md             # instalace + napojení (lokálně i online) do Clauda
 └── src/
-    ├── server.ts         # createMcpServer() — sdílená registrace nástrojů (stdio i HTTP)
-    ├── index.ts          # vstup STDIO (Claude Desktop / Code)
-    ├── http.ts           # vstup ONLINE: Express + Streamable HTTP + ochrana /mcp
-    ├── auth.ts           # OAuth 2.1 server (stateless JWT, PKCE, owner password)
-    ├── email-service.ts  # IMAP (ImapFlow) + SMTP (Nodemailer) — žádná MCP logika
-    ├── config.ts         # načtení a validace env (Webglobe defaults + online proměnné)
+    ├── server.ts         # createMcpServer(service) — registrace nástrojů nad konkrétní schránkou
+    ├── index.ts          # vstup STDIO (creds z env přes credsFromEnv)
+    ├── http.ts           # vstup ONLINE: Express + Streamable HTTP; per-session creds z DB
+    ├── auth.ts           # OAuth 2.1 (PKCE, DCR); /authorize = formulář na údaje schránky
+    ├── store.ts          # úložiště údajů: Postgres (prod) / in-memory (dev), šifrované
+    ├── crypto.ts         # AES-256-GCM šifrování údajů schránek (klíč ENCRYPTION_KEY)
+    ├── email-service.ts  # createEmailService(creds): IMAP (ImapFlow) + SMTP (Nodemailer)
+    ├── config.ts         # env (EMAIL_* jen pro stdio; online: JWT/ENCRYPTION/DATABASE)
     └── util.ts           # datum, adresy, detekce příloh, citace odpovědi
 ```
 
@@ -90,6 +92,8 @@
 - 2026-06-04: Autorizace = vlastní minimální OAuth 2.1 server (auth.ts), STATELESS — tokeny podepsané JWT (jose, HS256), žádná DB → přežije restart. Přihlášení jediným OWNER_PASSWORD, PKCE S256, Dynamic Client Registration (client_id = podepsaný JWT s redirect_uris). `/mcp` chráněno Bearer tokenem; 401 vrací WWW-Authenticate s odkazem na PRM. Ověřeno lokálním e2e testem (13/13: discovery→register→authorize→token→session→tools/list→refresh). Reálný handshake s claude.ai + reálný IMAP zatím netestováno (nutný deploy + heslo).
 - 2026-06-04: `/mcp` je session-based Streamable HTTP (Mcp-Session-Id, in-memory mapa transportů), ne stateless-per-request — kvůli kompatibilitě návaznosti initialize→tools/list u claude.ai.
 - 2026-06-04: dotenv volán s `quiet:true` — jinak v17 píše „tipy" na stdout a rozbil by stdio MCP protokol.
+- 2026-06-05: Diagnostika online provozu (claude.ai): (a) neznámá session musí vracet 404 (ne 400), jinak se claude.ai nereinicializuje; (b) ImapFlow vyvolává async `error` event → BEZ `client.on('error')` neodchycený event shodí celý server; (c) IMAP chyby překládáme do čitelných hlášek + timeouty (15s connect), ať „nevisí". Ověřeno reálným provozem na Railway.
+- 2026-06-05: PŘECHOD na MULTI-TENANT online. Místo jedné schránky v env zadá uživatel údaje při přidání connectoru (formulář na `/authorize`); uloží se šifrovaně (AES-256-GCM, `ENCRYPTION_KEY`) v Postgresu (`store.ts`), token nese jen `credentialId` (claim `sub`). `email-service.ts` přestavěno na `createEmailService(creds)` — per-uživatel údaje napříč nástroji. Pozn.: e-mailové heslo NELZE hashovat (server ho potřebuje k IMAP loginu) → jen šifrovat; doporučeno app-specific heslo. OWNER_PASSWORD zrušeno (autentizace = vlastnictví funkčních údajů schránky). stdio varianta beze změny (creds z env).
 
 ## Údržba tohoto souboru
 - Aktualizuj po strukturální změně, novém pravidlu nebo rozhodnutí. Maximální stručnost. Smaž zastaralé info.

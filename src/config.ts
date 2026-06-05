@@ -2,6 +2,7 @@ import { config as loadEnv } from "dotenv";
 import { z } from "zod";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { MailboxCreds } from "./email-service.js";
 
 // Načteme .env.local z aktuálního adresáře i z kořene balíčku (ať to funguje
 // bez ohledu na to, odkud MCP klient server spustí). dotenv NEpřepisuje už
@@ -22,8 +23,10 @@ const boolish = (def: boolean) =>
   }, z.boolean());
 
 const EnvSchema = z.object({
-  EMAIL_USER: z.string().min(1, "EMAIL_USER je povinný (celá e-mailová adresa)"),
-  EMAIL_PASSWORD: z.string().min(1, "EMAIL_PASSWORD je povinné"),
+  // V online (multi-tenant) režimu jsou údaje per-uživatel z DB → tady volitelné.
+  // Pro stdio (lokální) režim jsou povinné — kontroluje credsFromEnv().
+  EMAIL_USER: z.string().optional(),
+  EMAIL_PASSWORD: z.string().optional(),
   EMAIL_FROM_NAME: z.string().optional(),
 
   IMAP_HOST: z.string().min(1).default("mail.webglobe.cz"),
@@ -45,10 +48,14 @@ const EnvSchema = z.object({
   // Na Railway se automaticky odvodí z RAILWAY_PUBLIC_DOMAIN, pokud není zadána.
   PUBLIC_URL: z.string().optional(),
   RAILWAY_PUBLIC_DOMAIN: z.string().optional(),
-  // Heslo, kterým se přihlásíš při napojování connectoru (OAuth login).
+  // Heslo, kterým se přihlásíš při napojování connectoru (OAuth login) — nepovinné.
   OWNER_PASSWORD: z.string().optional(),
   // Tajný klíč pro podepisování OAuth tokenů (libovolný dlouhý náhodný řetězec).
   JWT_SECRET: z.string().optional(),
+  // Postgres (Railway) pro uložení šifrovaných údajů schránek (online multi-tenant).
+  DATABASE_URL: z.string().optional(),
+  // Klíč pro šifrování údajů schránek v DB (32 bajtů; hex/base64 nebo delší heslo).
+  ENCRYPTION_KEY: z.string().optional(),
 });
 
 export type Config = z.infer<typeof EnvSchema>;
@@ -69,3 +76,27 @@ function loadConfig(): Config {
 }
 
 export const config = loadConfig();
+
+/** Sestaví údaje schránky z env (pro lokální stdio režim). Vyžaduje EMAIL_USER/PASSWORD. */
+export function credsFromEnv(): MailboxCreds {
+  if (!config.EMAIL_USER || !config.EMAIL_PASSWORD) {
+    console.error(
+      "❌ Lokální (stdio) režim vyžaduje EMAIL_USER a EMAIL_PASSWORD v .env.local (viz .env.example).",
+    );
+    process.exit(1);
+  }
+  return {
+    imapHost: config.IMAP_HOST,
+    imapPort: config.IMAP_PORT,
+    imapSecure: config.IMAP_SECURE,
+    smtpHost: config.SMTP_HOST,
+    smtpPort: config.SMTP_PORT,
+    smtpSecure: config.SMTP_SECURE,
+    user: config.EMAIL_USER,
+    password: config.EMAIL_PASSWORD,
+    fromName: config.EMAIL_FROM_NAME,
+    draftsFolder: config.DRAFTS_FOLDER,
+    sentFolder: config.SENT_FOLDER,
+    tlsRejectUnauthorized: config.TLS_REJECT_UNAUTHORIZED,
+  };
+}

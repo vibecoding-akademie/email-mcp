@@ -53,45 +53,49 @@ npm install       # vrátí dev závislosti pro další vývoj
 ## 🌍 Online (claude.ai web + mobil) — nasazení na Railway
 
 Tahle varianta běží na serveru, takže s e-mailem pracuješ i **z mobilu nebo ze
-zahraničí** — stačí být přihlášený do svého Claude účtu. Každý si nasadí **vlastní**
-server se svým přihlášením.
+zahraničí** — stačí být přihlášený do svého Claude účtu. Je **multi-tenant**: každý,
+kdo si connector přidá, **zadá údaje své schránky ve formuláři** a ty se uloží
+**šifrovaně** do Postgresu. Jeden server tak obslouží víc lidí (každý jen svou poštu).
 
 > **Prerekvizita:** vlastní connectory na claude.ai jsou jen na **Claude Pro nebo Max**.
 
 ### 1) Nasaď na Railway
-1. Nahraj tenhle projekt na GitHub (`git init`, commit, push).
-2. Na [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo** → vyber repo.
+1. Nahraj projekt na GitHub (`git init`, commit, push).
+2. [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo** → vyber repo.
    Railway sám zbuilduje (přes `railway.json`) a spustí `node dist/http.js`.
-3. V projektu **Settings → Networking → Generate Domain** (vznikne `https://…up.railway.app`).
+3. **Settings → Networking → Generate Domain** (vznikne `https://…up.railway.app`).
 
-### 2) Nastav proměnné prostředí (Variables)
+### 2) Přidej databázi Postgres
+1. V projektu na Railway: **+ New → Database → Add PostgreSQL**.
+2. U služby `email-mcp` → **Variables** → přidej `DATABASE_URL` s hodnotou
+   `${{Postgres.DATABASE_URL}}` (reference na databázi). Server si tabulku vytvoří sám.
+
+### 3) Nastav proměnné prostředí (Variables)
 | Proměnná | Hodnota |
 |---|---|
-| `EMAIL_USER` | tvoje e-mailová adresa |
-| `EMAIL_PASSWORD` | heslo k e-mailu |
-| `OWNER_PASSWORD` | **silné** heslo, kterým se přihlásíš do connectoru |
 | `JWT_SECRET` | náhodný klíč — `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `ENCRYPTION_KEY` | **jiný** náhodný klíč (stejným příkazem) — šifruje uložené údaje schránek |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (z kroku 2) |
 
 `PUBLIC_URL` obvykle nemusíš nastavovat — odvodí se z Railway domény automaticky.
-Pro jiného poskytovatele než Webglobe přidej `IMAP_HOST` / `SMTP_HOST` / `SMTP_PORT`
-(viz `.env.example`).
+E-mailové údaje (`EMAIL_USER`…) tu už **nejsou potřeba** — zadávají se per-uživatel ve formuláři.
 
-### 3) Přidej connector do claude.ai
+### 4) Přidej connector do claude.ai
 1. claude.ai → **Settings → Connectors → Add custom connector**.
 2. URL = **`https://<tvoje-railway-doména>/mcp`** → **Add**.
-3. Claude tě přesměruje na **přihlašovací stránku** → zadej `OWNER_PASSWORD` → povolíš přístup.
+3. Claude ukáže **formulář** → vyplň **e-mail, heslo (ideálně app-specific), IMAP a SMTP server** → **Připojit schránku**.
 4. Hotovo — funguje i v mobilní appce Claude pod stejným účtem.
 
 ### Bezpečnost (důležité)
-- E-mailové heslo je uložené v proměnných na Railway (šifrované at-rest). Hosting = nutná daň za „funguje odkudkoli".
-- Přístup k serveru chrání `OWNER_PASSWORD` + OAuth. **Zvol silné heslo** a `JWT_SECRET` nikdy nesdílej.
-- Server je single-tenant: obsluhuje jen tvou jednu schránku. Kamarád si nasadí vlastní instanci.
+- Údaje schránek se ukládají do Postgresu **šifrovaně** (AES-256-GCM, klíč `ENCRYPTION_KEY`).
+- Heslo ke schránce **nelze hashovat** (server ho musí použít k přihlášení do IMAP) — proto je *šifrované*, ne hash. Server ho umí rozšifrovat → používej **app-specific heslo** (odvolatelné).
+- `JWT_SECRET` ani `ENCRYPTION_KEY` nikdy nesdílej. Když změníš `ENCRYPTION_KEY`, dříve uložené údaje se nerozšifrují (uživatelé přidají connector znovu).
 
 ### Lokální test online verze
 ```powershell
-# do .env.local doplň OWNER_PASSWORD, JWT_SECRET a PUBLIC_URL=http://localhost:3000
+# do .env.local doplň JWT_SECRET, ENCRYPTION_KEY a PUBLIC_URL=http://localhost:3000
+# (DATABASE_URL nepovinné — bez něj běží úložiště v paměti)
 npm run dev:http
-# server poběží na http://localhost:3000 (connector URL: http://localhost:3000/mcp)
 ```
 
 ---

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import * as email from "./email-service.js";
+import type { EmailService } from "./email-service.js";
 
 /** Zabalí výsledek do MCP textové odpovědi jako čitelný JSON. */
 function json(data: unknown): CallToolResult {
@@ -20,10 +20,11 @@ async function run(fn: () => Promise<CallToolResult>): Promise<CallToolResult> {
 }
 
 /**
- * Vytvoří MCP server se všemi e-mailovými nástroji.
- * Používá ho stdio (index.ts) i HTTP/online (http.ts) varianta — logika nástrojů je sdílená.
+ * Vytvoří MCP server se všemi e-mailovými nástroji nad konkrétní schránkou.
+ * Službu (a tím i přihlašovací údaje) dostane zvenčí: stdio (index.ts) z env,
+ * online (http.ts) z údajů konkrétního uživatele uložených v DB.
  */
-export function createMcpServer(): McpServer {
+export function createMcpServer(email: EmailService): McpServer {
   const server = new McpServer({ name: "email-mcp", version: "0.1.0" });
 
   // ── list_folders ───────────────────────────────────────────────────────────
