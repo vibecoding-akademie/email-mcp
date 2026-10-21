@@ -62,6 +62,25 @@ app.get("/navod", (_req, res) => {
 // ── MCP endpoint (session-based) — chráněno OAuth tokenem ──────────────────────
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
+// Klienti (claude.ai) session skoro nikdy nezavírají přes DELETE → bez úklidu se
+// transporty i MCP servery hromadí v paměti donekonečna. Nečinné session proto
+// po SESSION_IDLE_MS zavřeme; klient pak dostane 404 a pošle nový initialize.
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+const lastSeen: Record<string, number> = {};
+const touch = (sid: string | undefined) => {
+  if (sid && transports[sid]) lastSeen[sid] = Date.now();
+};
+setInterval(() => {
+  const cutoff = Date.now() - SESSION_IDLE_MS;
+  for (const [sid, transport] of Object.entries(transports)) {
+    if ((lastSeen[sid] ?? 0) < cutoff) {
+      delete transports[sid];
+      delete lastSeen[sid];
+      transport.close().catch(() => {});
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
 app.post("/mcp", auth.requireAuth, async (req, res) => {
   try {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -87,10 +106,14 @@ app.post("/mcp", auth.requireAuth, async (req, res) => {
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
           transports[sid] = transport!;
+          lastSeen[sid] = Date.now();
         },
       });
       transport.onclose = () => {
-        if (transport!.sessionId) delete transports[transport!.sessionId];
+        if (transport!.sessionId) {
+          delete transports[transport!.sessionId];
+          delete lastSeen[transport!.sessionId];
+        }
       };
       const server = createMcpServer(service);
       await server.connect(transport);
@@ -109,6 +132,7 @@ app.post("/mcp", auth.requireAuth, async (req, res) => {
       });
     }
 
+    touch(sessionId);
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
     console.error("Chyba při zpracování MCP požadavku:", err);
@@ -128,6 +152,7 @@ async function handleSession(req: express.Request, res: express.Response) {
       id: null,
     });
   }
+  touch(sessionId);
   await transport.handleRequest(req, res);
 }
 app.get("/mcp", auth.requireAuth, handleSession);
